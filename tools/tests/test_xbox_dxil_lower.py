@@ -105,6 +105,24 @@ class XboxDxilLowerDeclarationTests(unittest.TestCase):
         self.assert_calls_declared(result)
         self.assert_decls_before_first_define(result)
 
+    def test_wave_max_u32_lowering(self):
+        text = "\n".join([
+            'target triple = "dxil-ms-xb2"',
+            '%dx.types.Handle = type { i8* }',
+            'define void @main() {',
+            '  %1 = call i32 @xbox.WaveMax_U32(i32 1, i32 42)',
+            '  ret void',
+            '}',
+            'declare i32 @xbox.WaveMax_U32(i32, i32) #0',
+            'attributes #0 = { nounwind readnone }',
+        ])
+        result, count, left = lower_module.lower(text)
+        self.assertEqual(count, 1)
+        self.assertEqual(left, set())
+        self.assertIn("declare i32 @dx.op.waveActiveOp.i32(i32, i32, i8, i8)", result)
+        self.assertRegex(result, r"call i32 @dx\.op\.waveActiveOp\.i32\(i32 119, i32 42, i8 3, i8 1\)")
+        self.assertNotIn("@xbox.", result)
+
 
 RENUMBER_MODULE = """source_filename = "test"
 target triple = "dxil-ms-dx"
@@ -328,6 +346,7 @@ HIGH_HALF_MASK = '  %3 = call i32 @xbox.V_CNDMASK_B32(i32 9, { i32, i32 } { i32 
 READ_LANE = '  %4 = call i32 @xbox.ReadLane.i32(i32 10, i32 %1, i32 31)'
 ACTIVE_SUM = '  %5 = call i32 @dx.op.waveActiveOp.i32(i32 119, i32 %1, i8 0, i8 1)'
 LANE_COUNT = '  %6 = call i32 @dx.op.waveGetLaneCount(i32 112)'
+WAVE_MAX = '  %7 = call i32 @xbox.WaveMax_U32(i32 11, i32 %1)'
 
 
 class XboxDxilNeedsWave64Tests(unittest.TestCase):
@@ -345,6 +364,9 @@ class XboxDxilNeedsWave64Tests(unittest.TestCase):
 
     def test_standard_wave_operation_needs_wave64(self):
         self.assertTrue(self.needs(64, ACTIVE_SUM))
+
+    def test_wave_max_needs_wave64(self):
+        self.assertTrue(self.needs(64, SWIZZLE, WAVE_MAX))
 
     def test_group_of_32_does_not_need_wave64(self):
         self.assertFalse(self.needs(32, SWIZZLE, HIGH_HALF_MASK, READ_LANE, ACTIVE_SUM))

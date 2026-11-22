@@ -22,10 +22,10 @@ Lowered so far (more are added as shaders need them):
                            Hillis-Steele prefix sums these shaders contain (masks 0xAAAAAAAA, 0xCCCCCCCC, 0xF0F0F0F0 with swizzles 30, 60, 120)
   MBCNT64                  number of set mask bits below this lane (v_mbcnt_lo + v_mbcnt_hi)
   S_BCNT1_U64              popcount of the 64-bit mask
-  Min3/Max3_F32, Min3/Max3/Med3_U32, BFI, V_ALIGNBYTE_B32, WaveMin_U32, MakeUniform.i64   the obvious standard operations
+  Min3/Max3_F32, Min3/Max3/Med3_U32, BFI, V_ALIGNBYTE_B32, WaveMin_U32, WaveMax_U32, MakeUniform.i64   the obvious standard operations
   TypedLoad.i32            (handle, byte offset, format 65 = 8_UINT): the dword at (offset & ~3) of the raw buffer, byte (offset & 3);
                            only component 0 of the result may be used
-  global_load_dword{,x2,x3,x4}_with_cache, s_load_dword_with_cache, global_store_dword{,x3,x4}_with_cache,
+  global_load_dword{,x2,x3,x4}_with_cache, s_load_dword_with_cache, global_store_dword{,x2,x3,x4}_with_cache,
   global_atomic_{add,sub,fmin,fmax}
                            64-bit address -> (resource, offset) through an address table read with ResourceDescriptorHeap[table]
                            (the optional third argument, default 0): a 16-byte header, then 2^ADDRESS_TABLE_LOG2 entries of
@@ -207,7 +207,7 @@ def lower(text):
     ins_re = re.compile(r"^\s*(%[\w.]+) = insertvalue (" + PAIR_RE + r") (undef|%[\w.]+|\{[^}]*\}), (?:half|i32) (%[\w.]+|[-+\w.]+), ([0-3])\s*$")
     ext_re = re.compile(r"^\s*(%[\w.]+) = extractvalue " + PAIR_RE + r" (%[\w.]+), ([0-3])\s*$")
     copysign_re = re.compile(r"^(\s*)(%[\w.]+) = (?:tail )?call float @llvm\.copysign\.f32\(float ([^,]+), float ([^)]+)\)\s*(?:,\s*![^;]*)?(?:;.*)?$")
-    store_re = re.compile(r"^(\s*)call void @xbox\.(global_store_dword(?:x[34])?_with_cache)\(i32 \d+, (.*?)\)\s*(?:,\s*![^;]*)?(?:;.*)?$")
+    store_re = re.compile(r"^(\s*)call void @xbox\.(global_store_dword(?:x[234])?_with_cache)\(i32 \d+, (.*?)\)\s*(?:,\s*![^;]*)?(?:;.*)?$")
     resret_re = re.compile(r"^(\s*)(%[\w.]+) = extractvalue %dx\.types\.ResRet\.i32 (%[\w.]+), (\d+)\s*$")
     call_re = re.compile(r"^(\s*)(%[\w.]+) = call ([^@]+?) @xbox\.([\w.]+)\(i32 \d+(?:, (.*?))?\)\s*(?:,\s*![^;]*)?(?:;.*)?$")
 
@@ -502,8 +502,9 @@ def lower(text):
             emit("%s = select i1 %s, i32 %s, i32 0" % (fresh(), nz, left))
             sel = "%%xl.%d" % counter[0]
             emit("%s = or i32 %s, %s" % (dst, right, sel))
-        elif name == "WaveMin_U32":
-            emit("%s = call i32 @dx.op.waveActiveOp.i32(i32 119, i32 %s, i8 2, i8 1)" % (dst, operand(args[0])))
+        elif name in ("WaveMin_U32", "WaveMax_U32"):
+            op = 2 if name == "WaveMin_U32" else 3
+            emit("%s = call i32 @dx.op.waveActiveOp.i32(i32 119, i32 %s, i8 %d, i8 1)" % (dst, operand(args[0]), op))
             used.add("@dx.op.waveActiveOp.i32(")
         elif name == "MakeUniform.i64":
             emit("%s = call i64 @dx.op.waveReadLaneFirst.i64(i32 118, i64 %s)" % (dst, operand(args[0])))
@@ -545,7 +546,7 @@ def lower(text):
     return res, n_lowered, left
 
 
-WAVE64_INTRINSICS = ("GetLaneID", "MakeUniform.", "ReadLane.", "Ballot64", "V_CNDMASK_B32", "MBCNT64", "S_BCNT1_U64", "WaveMin_U32")
+WAVE64_INTRINSICS = ("GetLaneID", "MakeUniform.", "ReadLane.", "Ballot64", "V_CNDMASK_B32", "MBCNT64", "S_BCNT1_U64", "WaveMin_U32", "WaveMax_U32")
 
 
 def needs_wave64(text):

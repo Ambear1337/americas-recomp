@@ -59,6 +59,15 @@ class XboxDxilAddressLowerTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r"createHandleFromHeap\(i32 218, i32 %\S+, i1 false, i1 true\)", result)), 1)
         self.assertNotRegex(result, r"\{ i32, i32, i32 \}")
 
+    def test_store_of_a_two_dword_aggregate(self):
+        result, _, left = lower_module.lower(function([
+            '  %1 = insertvalue { i32, i32 } undef, i32 12, 0',
+            '  %2 = insertvalue { i32, i32 } %1, i32 34, 1',
+            '  call void @xbox.global_store_dwordx2_with_cache(i32 362, i64 4096, { i32, i32 } %2, i32 undef, i32 undef)',
+        ]))
+        self.assertEqual(left, set())
+        self.assertRegex(result, r"rawBufferStore\.i32\(i32 140, %dx\.types\.Handle %\S+, i32 %\S+, i32 undef, i32 12, i32 34, i32 undef, i32 undef, i8 3, i32 4\)")
+
     def test_store_of_a_literal_based_aggregate(self):
         result, _, left = lower_module.lower(function([
             '  %1 = insertvalue { i32, i32, i32, i32 } { i32 -8388609, i32 -8388609, i32 0, i32 undef }, i32 7, 3',
